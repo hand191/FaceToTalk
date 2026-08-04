@@ -1,0 +1,32 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+# Build products and test results
+build/
+DerivedData/
+work/
+*.xcresult
+*.dSYM
+*.dSYM.zip
+
+# Local release artifacts
+release-assets/
+*.zip
+SHA256SUMS.txt
