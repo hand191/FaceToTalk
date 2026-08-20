@@ -10,6 +10,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var visualState: VisualState = .starting
     @Published private(set) var progress: FacingProgress = .idle
     @Published private(set) var voiceAssumption: VoiceAssumption = .unknown
+    @Published private(set) var systemMicrophoneState: SystemMicrophoneState = .unknown
     @Published private(set) var cameraPermission: CameraPermissionState = .notDetermined
     @Published private(set) var keyboardPermissionGranted = false
     @Published private(set) var yaw: Double?
@@ -21,16 +22,19 @@ final class AppModel: ObservableObject {
 
     private let camera = VisionCameraService()
     private let hotKey = HotKeyController()
+    private let systemMicrophone = SystemMicrophoneController()
     private var stateMachine = FacingStateMachine()
     private var lifecycleTokens: [NSObjectProtocol] = []
     private var refreshTimer: Timer?
     private var lastLoggedVisualState: VisualState?
+    private var systemMicrophoneArmed = false
     #if DEBUG
     private var diagnosticWindow: NSWindow?
     #endif
 
     init(settings: SettingsStore = SettingsStore()) {
         self.settings = settings
+        camera.updateFacingAngleThresholds(settings.facingAngleThresholds)
         camera.onEvent = { [weak self] event in
             Task { @MainActor in
                 self?.handleCameraEvent(event)
@@ -41,6 +45,11 @@ final class AppModel: ObservableObject {
         debugTrace("keyboard post-event access = \(keyboardPermissionGranted ? "allowed" : "not allowed")")
 
         if settings.masterEnabled {
+            if settings.controlMode == .systemMicrophone {
+                beginFailClosedMicrophoneSession(
+                    successMessage: "系统麦克风先保持禁用（静音）；确认正对屏幕后才启用"
+                )
+            }
             camera.start()
         } else {
             visualState = .interrupted
@@ -107,16 +116,41 @@ final class AppModel: ObservableObject {
     }
 
     var targetStatus: String {
+        if settings.controlMode == .systemMicrophone {
+            return "系统麦克风模式 · 不检查前台应用"
+        }
         if !settings.restrictToTarget { return "已允许全局发送" }
         if isTargetForeground { return "Codex / ChatGPT 位于前台" }
         return "等待 Codex / ChatGPT 回到前台"
     }
 
     var voiceExplanation: String {
+        if settings.controlMode == .systemMicrophone {
+            return systemMicrophoneState.explanation
+        }
         if voiceAssumption == .unknown, settings.hotKeyMode == .pressAndHold {
             return "当前 Codex 使用 key-down / key-up；状态仍无应用回执"
         }
         return voiceAssumption.explanation
+    }
+
+    var controlStatusTitle: String {
+        settings.controlMode == .codexShortcut ? "Codex 语音状态" : "系统麦克风"
+    }
+
+    var controlStatusLabel: String {
+        settings.controlMode == .codexShortcut ? voiceAssumption.label : systemMicrophoneState.label
+    }
+
+    var controlStatusNeedsAttention: Bool {
+        if settings.controlMode == .codexShortcut {
+            return voiceAssumption == .unknown
+        }
+        return !systemMicrophoneState.isAvailable
+    }
+
+    var headerSubtitle: String {
+        settings.controlMode == .codexShortcut ? "只看朝向，只发快捷键" : "只看朝向，只控系统麦克风"
     }
 
     func setMasterEnabled(_ enabled: Bool) {
@@ -127,11 +161,18 @@ final class AppModel: ObservableObject {
         if enabled {
             visualState = .starting
             cameraStatus = "正在启动摄像头"
-            actionStatus = voiceAssumption == .unknown
-                ? "请先确认当前语音输入为关闭状态"
-                : "自动控制已启用"
+            if settings.controlMode == .systemMicrophone {
+                beginFailClosedMicrophoneSession(
+                    successMessage: "自动控制已启用；麦克风先保持禁用（静音），确认正对后才启用"
+                )
+            } else {
+                actionStatus = voiceAssumption == .unknown
+                    ? "请先确认当前语音输入为关闭状态"
+                    : "自动控制已启用"
+            }
             camera.start()
         } else {
+            systemMicrophoneArmed = false
             camera.stop()
             visualState = .interrupted
             cameraStatus = "总开关已关闭"
@@ -142,6 +183,12 @@ final class AppModel: ObservableObject {
     func timingSettingsChanged() {
         resetTiming()
         actionStatus = "计时设置已更新，连续计时已重置"
+    }
+
+    func facingAngleSettingsChanged() {
+        camera.updateFacingAngleThresholds(settings.facingAngleThresholds)
+        resetTiming()
+        actionStatus = "头部角度设置已更新，连续计时已重置"
     }
 
     func updateShortcut(_ shortcut: KeyboardShortcut) {
@@ -159,6 +206,42 @@ final class AppModel: ObservableObject {
         actionStatus = "快捷键语义已更改；请测试后重新同步"
     }
 
+    func setControlMode(_ newMode: ControlMode) {
+        guard newMode != settings.controlMode else { return }
+
+        if settings.controlMode == .systemMicrophone {
+            systemMicrophoneArmed = false
+            let restore = systemMicrophone.restoreOriginalState()
+            systemMicrophoneState = restore.state
+            guard restore.succeeded else {
+                actionStatus = "无法切换模式：\(restore.message)"
+                return
+            }
+        }
+
+        guard hotKey.releaseHeldKey() else {
+            actionStatus = "无法切换模式：请先恢复键盘事件权限并释放按键"
+            return
+        }
+        settings.controlMode = newMode
+        resetTiming()
+
+        if newMode == .systemMicrophone {
+            if settings.masterEnabled {
+                beginFailClosedMicrophoneSession(
+                    successMessage: "已切换为系统麦克风模式；当前先保持禁用（静音），确认正对后才启用"
+                )
+            } else {
+                systemMicrophoneState = systemMicrophone.currentState()
+                actionStatus = "已切换为系统麦克风模式；打开总开关后开始控制"
+            }
+        } else {
+            voiceAssumption = .unknown
+            actionStatus = "已切换为 Codex 快捷键模式；请重新同步"
+        }
+        refreshEnvironment()
+    }
+
     func targetRestrictionChanged() {
         resetTiming()
         refreshEnvironment()
@@ -166,6 +249,7 @@ final class AppModel: ObservableObject {
     }
 
     func confirmCurrentlyOff() {
+        guard settings.controlMode == .codexShortcut else { return }
         _ = hotKey.releaseHeldKey()
         voiceAssumption = .assumedOff
         resetTiming()
@@ -257,9 +341,23 @@ final class AppModel: ObservableObject {
         debugTrace("test key-up \(posted ? "posted" : "failed"): \(settings.shortcut.displayName)")
     }
 
+    func setSystemMicrophoneMuted(_ muted: Bool) {
+        guard settings.controlMode == .systemMicrophone else { return }
+        let result = systemMicrophone.setMuted(muted)
+        systemMicrophoneState = result.state
+        if muted {
+            systemMicrophoneArmed = result.succeeded && result.state == .muted
+        }
+        actionStatus = result.message
+        resetTiming()
+    }
+
     func quit() {
+        systemMicrophoneArmed = false
         camera.stop()
         _ = hotKey.releaseHeldKey()
+        let restore = systemMicrophone.restoreOriginalState()
+        systemMicrophoneState = restore.state
         NSApplication.shared.terminate(nil)
     }
 
@@ -282,12 +380,20 @@ final class AppModel: ObservableObject {
             visualState = .interrupted
             cameraStatus = reason
             debugTrace("camera interrupted: \(reason)")
-            enterSafetyState(reason: reason, attemptToggleClose: true)
+            enterSafetyState(
+                reason: reason,
+                attemptToggleClose: true,
+                keepSystemMicrophoneMuted: true
+            )
         case .failed(let message):
             visualState = .unavailable
             cameraStatus = message
             debugTrace("camera failed: \(message)")
-            enterSafetyState(reason: message, attemptToggleClose: true)
+            enterSafetyState(
+                reason: message,
+                attemptToggleClose: true,
+                keepSystemMicrophoneMuted: true
+            )
         }
     }
 
@@ -302,7 +408,8 @@ final class AppModel: ObservableObject {
         }
         refreshFrontmostApplication()
 
-        if settings.restrictToTarget && !isTargetForeground {
+        if settings.controlMode == .codexShortcut,
+           settings.restrictToTarget && !isTargetForeground {
             stateMachine.reset()
             progress = .idle
             return
@@ -324,11 +431,43 @@ final class AppModel: ObservableObject {
     private func attemptAutomationAction(_ action: AutomationAction) {
         guard !actionInFlight else { return }
 
+        if settings.controlMode == .systemMicrophone {
+            attemptSystemMicrophoneAction(action)
+            return
+        }
+
         switch settings.hotKeyMode {
         case .toggle:
             attemptToggleAction(action)
         case .pressAndHold:
             attemptHoldAction(action)
+        }
+    }
+
+    private func attemptSystemMicrophoneAction(_ action: AutomationAction) {
+        let shouldMute = action == .close
+        guard shouldMute || systemMicrophoneArmed else {
+            actionStatus = "尚未确认麦克风已安全关闭，因此不会自动启用"
+            return
+        }
+        let alreadyDesired = (shouldMute && systemMicrophoneState == .muted)
+            || (!shouldMute && systemMicrophoneState == .unmuted)
+        if alreadyDesired {
+            if shouldMute {
+                systemMicrophoneArmed = true
+            }
+            stateMachine.acknowledgeCurrentSegment()
+            return
+        }
+
+        let result = systemMicrophone.setMuted(shouldMute)
+        systemMicrophoneState = result.state
+        if shouldMute {
+            systemMicrophoneArmed = result.succeeded && result.state == .muted
+        }
+        actionStatus = result.message
+        if result.succeeded {
+            stateMachine.acknowledgeCurrentSegment()
         }
     }
 
@@ -409,8 +548,29 @@ final class AppModel: ObservableObject {
         return true
     }
 
-    private func enterSafetyState(reason: String, attemptToggleClose: Bool) {
+    private func enterSafetyState(
+        reason: String,
+        attemptToggleClose: Bool,
+        keepSystemMicrophoneMuted: Bool = false
+    ) {
         resetTiming()
+
+        if settings.controlMode == .systemMicrophone {
+            if keepSystemMicrophoneMuted, settings.masterEnabled {
+                let result = systemMicrophone.setMuted(true)
+                systemMicrophoneState = result.state
+                systemMicrophoneArmed = result.succeeded && result.state == .muted
+                actionStatus = result.succeeded
+                    ? "安全关闭：检测不可用，系统麦克风已禁用（静音）"
+                    : "无法确认安全静音：\(result.message)"
+                return
+            }
+            systemMicrophoneArmed = false
+            let restore = systemMicrophone.restoreOriginalState()
+            systemMicrophoneState = restore.state
+            actionStatus = restore.succeeded ? "安全重置：\(restore.message)" : restore.message
+            return
+        }
 
         if settings.hotKeyMode == .pressAndHold {
             let released = hotKey.releaseHeldKey()
@@ -467,7 +627,8 @@ final class AppModel: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.refreshFrontmostApplication()
-                if self.settings.restrictToTarget && !self.isTargetForeground {
+                if self.settings.controlMode == .codexShortcut,
+                   self.settings.restrictToTarget && !self.isTargetForeground {
                     self.stateMachine.reset()
                     self.progress = .idle
                 }
@@ -490,7 +651,11 @@ final class AppModel: ObservableObject {
                     self.camera.stop()
                     self.visualState = .interrupted
                     self.cameraStatus = "系统睡眠、锁屏或会话停用"
-                    self.enterSafetyState(reason: "睡眠、锁屏或会话停用", attemptToggleClose: false)
+                    self.enterSafetyState(
+                        reason: "睡眠、锁屏或会话停用",
+                        attemptToggleClose: false,
+                        keepSystemMicrophoneMuted: true
+                    )
                 }
             })
         }
@@ -509,6 +674,11 @@ final class AppModel: ObservableObject {
                 Task { @MainActor in
                     guard let self, self.settings.masterEnabled else { return }
                     self.resetTiming()
+                    if self.settings.controlMode == .systemMicrophone {
+                        self.beginFailClosedMicrophoneSession(
+                            successMessage: "系统已恢复；麦克风先保持禁用（静音），确认正对后才启用"
+                        )
+                    }
                     self.visualState = .starting
                     self.cameraStatus = "系统已恢复，正在重启摄像头"
                     self.camera.start()
@@ -521,12 +691,44 @@ final class AppModel: ObservableObject {
                 self?.refreshEnvironment()
             }
         }
+
+        lifecycleTokens.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                _ = self.hotKey.releaseHeldKey()
+                _ = self.systemMicrophone.restoreOriginalState()
+            }
+        })
     }
 
     private func refreshEnvironment() {
         cameraPermission = camera.currentPermission()
         keyboardPermissionGranted = hotKey.hasPostEventAccess
+        if settings.controlMode == .systemMicrophone {
+            systemMicrophoneState = systemMicrophone.currentState()
+        }
         refreshFrontmostApplication()
+    }
+
+    private func beginFailClosedMicrophoneSession(successMessage: String) {
+        systemMicrophoneArmed = false
+        let sessionState = systemMicrophone.beginSession()
+        systemMicrophoneState = sessionState
+        guard sessionState.isAvailable else {
+            actionStatus = sessionState.explanation
+            return
+        }
+
+        let result = systemMicrophone.setMuted(true)
+        systemMicrophoneState = result.state
+        systemMicrophoneArmed = result.succeeded && result.state == .muted
+        actionStatus = result.succeeded
+            ? successMessage
+            : "无法进入默认静音状态：\(result.message)"
     }
 
     private func refreshFrontmostApplication() {
@@ -539,6 +741,7 @@ final class AppModel: ObservableObject {
 
         let targetUnavailable = settings.restrictToTarget && !isTargetForeground
         let shouldRelease = !settings.masterEnabled
+            || settings.controlMode != .codexShortcut
             || settings.hotKeyMode != .pressAndHold
             || voiceAssumption != .assumedOn
             || targetUnavailable

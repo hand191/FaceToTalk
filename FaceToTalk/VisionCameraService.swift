@@ -3,6 +3,53 @@ import CoreImage
 import Foundation
 @preconcurrency import Vision
 
+struct FacingAngleThresholds: Equatable, Sendable {
+    let enterYaw: Double
+    let enterPitch: Double
+    let exitYaw: Double
+    let exitPitch: Double
+
+    init(
+        enterYawDegrees: Double,
+        enterPitchDegrees: Double,
+        exitYawDegrees: Double,
+        exitPitchDegrees: Double
+    ) {
+        enterYaw = enterYawDegrees * .pi / 180
+        enterPitch = enterPitchDegrees * .pi / 180
+        exitYaw = exitYawDegrees * .pi / 180
+        exitPitch = exitPitchDegrees * .pi / 180
+    }
+
+    static let standard = FacingAngleThresholds(
+        enterYawDegrees: 16,
+        enterPitchDegrees: 14,
+        exitYawDegrees: 24,
+        exitPitchDegrees: 21
+    )
+}
+
+struct HeadPoseClassifier: Sendable {
+    var thresholds: FacingAngleThresholds
+    private(set) var wasFacing = false
+
+    init(thresholds: FacingAngleThresholds = .standard) {
+        self.thresholds = thresholds
+    }
+
+    mutating func classify(yaw: Double, pitch: Double) -> VisualState {
+        let yawLimit = wasFacing ? thresholds.exitYaw : thresholds.enterYaw
+        let pitchLimit = wasFacing ? thresholds.exitPitch : thresholds.enterPitch
+        let facing = abs(yaw) <= yawLimit && abs(pitch) <= pitchLimit
+        wasFacing = facing
+        return facing ? .facing : .away
+    }
+
+    mutating func reset() {
+        wasFacing = false
+    }
+}
+
 final class VisionCameraService: NSObject, @unchecked Sendable {
     var onEvent: (@Sendable (CameraEvent) -> Void)?
 
@@ -14,15 +61,10 @@ final class VisionCameraService: NSObject, @unchecked Sendable {
     private var configured = false
     private var intentionallyStopped = false
     private var lastAnalysisTime: TimeInterval = 0
-    private var wasFacing = false
+    private var poseClassifier = HeadPoseClassifier()
     private var notificationTokens: [NSObjectProtocol] = []
 
     private let analysisInterval: TimeInterval = 0.125
-    private let enterYaw = 0.28
-    private let enterPitch = 0.25
-    private let exitYaw = 0.42
-    private let exitPitch = 0.36
-
     override init() {
         super.init()
         request.revision = VNDetectFaceRectanglesRequestRevision3
@@ -37,6 +79,12 @@ final class VisionCameraService: NSObject, @unchecked Sendable {
 
     func currentPermission() -> CameraPermissionState {
         permissionState(for: AVCaptureDevice.authorizationStatus(for: .video))
+    }
+
+    func updateFacingAngleThresholds(_ thresholds: FacingAngleThresholds) {
+        analysisQueue.async { [weak self] in
+            self?.poseClassifier = HeadPoseClassifier(thresholds: thresholds)
+        }
     }
 
     func start() {
@@ -70,7 +118,9 @@ final class VisionCameraService: NSObject, @unchecked Sendable {
             if self.session.isRunning {
                 self.session.stopRunning()
             }
-            self.wasFacing = false
+            self.analysisQueue.async { [weak self] in
+                self?.poseClassifier.reset()
+            }
         }
     }
 
@@ -195,30 +245,27 @@ extension VisionCameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
             guard let face = faces.max(by: {
                 ($0.boundingBox.width * $0.boundingBox.height) < ($1.boundingBox.width * $1.boundingBox.height)
             }) else {
-                wasFacing = false
+                poseClassifier.reset()
                 onEvent?(.sample(VisionSample(state: .noFace, yaw: nil, pitch: nil, timestamp: now)))
                 return
             }
 
             guard let yaw = face.yaw?.doubleValue,
                   let pitch = face.pitch?.doubleValue else {
-                wasFacing = false
+                poseClassifier.reset()
                 onEvent?(.sample(VisionSample(state: .uncertain, yaw: face.yaw?.doubleValue, pitch: face.pitch?.doubleValue, timestamp: now)))
                 return
             }
 
-            let yawLimit = wasFacing ? exitYaw : enterYaw
-            let pitchLimit = wasFacing ? exitPitch : enterPitch
-            let facing = abs(yaw) <= yawLimit && abs(pitch) <= pitchLimit
-            wasFacing = facing
+            let visualState = poseClassifier.classify(yaw: yaw, pitch: pitch)
             onEvent?(.sample(VisionSample(
-                state: facing ? .facing : .away,
+                state: visualState,
                 yaw: yaw,
                 pitch: pitch,
                 timestamp: now
             )))
         } catch {
-            wasFacing = false
+            poseClassifier.reset()
             onEvent?(.sample(VisionSample(state: .uncertain, yaw: nil, pitch: nil, timestamp: now)))
         }
     }

@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>FaceToTalk 仅在本机分析头部是否朝向屏幕；不会保存或上传画面，也不做人脸身份识别。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>仅在选择“系统麦克风”模式时控制默认输入设备的静音状态；不会读取、录制、保存或上传声音。</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 </dict>

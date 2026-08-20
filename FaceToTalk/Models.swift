@@ -73,6 +73,59 @@ enum AutomationAction: Equatable, Sendable {
     case close
 }
 
+enum ControlMode: String, CaseIterable, Identifiable, Sendable {
+    case codexShortcut
+    case systemMicrophone
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .codexShortcut: "Codex 快捷键"
+        case .systemMicrophone: "系统麦克风"
+        }
+    }
+
+    var explanation: String {
+        switch self {
+        case .codexShortcut:
+            "正对和转开时发送配置的快捷键，不改变系统麦克风。"
+        case .systemMicrophone:
+            "正对屏幕时启用系统麦克风，转开、侧脸或无人脸时禁用；不会发送快捷键。"
+        }
+    }
+}
+
+enum SystemMicrophoneState: Equatable, Sendable {
+    case unknown
+    case muted
+    case unmuted
+    case unavailable(String)
+
+    var label: String {
+        switch self {
+        case .unknown: "尚未读取"
+        case .muted: "已禁用（静音）"
+        case .unmuted: "已启用"
+        case .unavailable: "不可用"
+        }
+    }
+
+    var explanation: String {
+        switch self {
+        case .unknown: "尚未读取默认输入设备状态"
+        case .muted: "默认输入设备当前已禁用（静音）"
+        case .unmuted: "默认输入设备当前可接收声音"
+        case .unavailable(let reason): reason
+        }
+    }
+
+    var isAvailable: Bool {
+        if case .unavailable = self { return false }
+        return self != .unknown
+    }
+}
+
 enum ProgressKind: Equatable, Sendable {
     case idle
     case opening

@@ -69,6 +69,25 @@ final class FacingStateMachineTests: XCTestCase {
         XCTAssertEqual(machine.progress.fraction, 0, accuracy: 0.0001)
     }
 
+    func testHeadPoseClassifierUsesCustomAnglesAndHysteresis() {
+        let thresholds = FacingAngleThresholds(
+            enterYawDegrees: 10,
+            enterPitchDegrees: 8,
+            exitYawDegrees: 20,
+            exitPitchDegrees: 16
+        )
+        var classifier = HeadPoseClassifier(thresholds: thresholds)
+
+        XCTAssertEqual(classifier.classify(yaw: 9 * .pi / 180, pitch: 0), .facing)
+        XCTAssertEqual(classifier.classify(yaw: 15 * .pi / 180, pitch: 0), .facing)
+        XCTAssertEqual(classifier.classify(yaw: 21 * .pi / 180, pitch: 0), .away)
+        XCTAssertEqual(classifier.classify(yaw: 15 * .pi / 180, pitch: 0), .away)
+        XCTAssertEqual(classifier.classify(yaw: 5 * .pi / 180, pitch: 0), .facing)
+
+        classifier.reset()
+        XCTAssertEqual(classifier.classify(yaw: 0, pitch: 9 * .pi / 180), .away)
+    }
+
     func testShortcutRequiresModifierAndWarnsAboutCommandSpace() {
         let unsafe = KeyboardShortcut(keyCode: 0, modifiersRawValue: 0, keyLabel: "A")
         XCTAssertFalse(unsafe.isValidForAutomation)
@@ -100,18 +119,38 @@ final class FacingStateMachineTests: XCTestCase {
         XCTAssertEqual(settings.openDelay, 1.0)
         XCTAssertEqual(settings.closeDelay, 3.0)
         XCTAssertEqual(settings.hotKeyMode, .toggle)
+        XCTAssertEqual(settings.controlMode, .codexShortcut)
+        XCTAssertEqual(settings.enterYawDegrees, 16)
+        XCTAssertEqual(settings.enterPitchDegrees, 14)
+        XCTAssertEqual(settings.exitYawDegrees, 24)
+        XCTAssertEqual(settings.exitPitchDegrees, 21)
 
         settings.openDelay = 2.4
         settings.closeDelay = 4.6
+        settings.controlMode = .systemMicrophone
+        settings.updateEnterYawDegrees(20)
+        settings.updateEnterPitchDegrees(18)
+        settings.updateExitYawDegrees(29)
+        settings.updateExitPitchDegrees(26)
         settings = SettingsStore(defaults: defaults)
         XCTAssertEqual(settings.openDelay, 2.4)
         XCTAssertEqual(settings.closeDelay, 4.6)
+        XCTAssertEqual(settings.controlMode, .systemMicrophone)
+        XCTAssertEqual(settings.enterYawDegrees, 20)
+        XCTAssertEqual(settings.enterPitchDegrees, 18)
+        XCTAssertEqual(settings.exitYawDegrees, 29)
+        XCTAssertEqual(settings.exitPitchDegrees, 26)
 
         defaults.set(Double.nan, forKey: "openDelay")
         defaults.set(99.0, forKey: "closeDelay")
         settings = SettingsStore(defaults: defaults)
         XCTAssertEqual(settings.openDelay, 1.0)
         XCTAssertEqual(settings.closeDelay, 10.0)
+
+        settings.updateExitYawDegrees(5)
+        settings.updateExitPitchDegrees(5)
+        XCTAssertEqual(settings.exitYawDegrees, settings.enterYawDegrees + 2)
+        XCTAssertEqual(settings.exitPitchDegrees, settings.enterPitchDegrees + 2)
 
         defaults.set(HotKeyMode.pressAndHold.rawValue, forKey: "hotKeyMode")
         settings = SettingsStore(defaults: defaults)
