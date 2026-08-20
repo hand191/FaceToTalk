@@ -24,7 +24,7 @@ struct MenuPanel: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("FaceToTalk")
                     .font(.headline)
-                Text("只看朝向，只发快捷键")
+                Text(model.headerSubtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -63,10 +63,10 @@ struct MenuPanel: View {
     private var voiceSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("语音状态")
+                Text(model.controlStatusTitle)
                 Spacer()
-                Text(model.voiceAssumption.label)
-                    .foregroundStyle(model.voiceAssumption == .unknown ? .orange : .primary)
+                Text(model.controlStatusLabel)
+                    .foregroundStyle(model.controlStatusNeedsAttention ? .orange : .primary)
             }
             Text(model.voiceExplanation)
                 .font(.caption)
@@ -77,7 +77,11 @@ struct MenuPanel: View {
                 .fixedSize(horizontal: false, vertical: true)
             Text(model.targetStatus)
                 .font(.caption)
-                .foregroundStyle(model.settings.restrictToTarget && !model.isTargetForeground ? .orange : .secondary)
+                .foregroundStyle(
+                    model.settings.controlMode == .codexShortcut
+                        && model.settings.restrictToTarget
+                        && !model.isTargetForeground ? .orange : .secondary
+                )
         }
     }
 
@@ -88,11 +92,19 @@ struct MenuPanel: View {
                 allowed: model.cameraPermission == .allowed,
                 detail: model.cameraPermission.label
             )
-            permissionRow(
-                title: "键盘事件",
-                allowed: model.keyboardPermissionGranted,
-                detail: model.keyboardPermissionGranted ? "已允许" : "尚未允许"
-            )
+            if settings.controlMode == .codexShortcut {
+                permissionRow(
+                    title: "键盘事件",
+                    allowed: model.keyboardPermissionGranted,
+                    detail: model.keyboardPermissionGranted ? "已允许" : "尚未允许"
+                )
+            } else {
+                permissionRow(
+                    title: "系统麦克风控制",
+                    allowed: model.systemMicrophoneState.isAvailable,
+                    detail: model.systemMicrophoneState.label
+                )
+            }
         }
     }
 
@@ -110,32 +122,39 @@ struct MenuPanel: View {
 
     private var actions: some View {
         VStack(spacing: 8) {
-            Button {
-                model.confirmCurrentlyOff()
-            } label: {
-                Label("我已确认当前关闭 / 重新同步", systemImage: "checkmark.shield")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
+            if settings.controlMode == .codexShortcut {
+                Button {
+                    model.confirmCurrentlyOff()
+                } label: {
+                    Label("我已确认当前关闭 / 重新同步", systemImage: "checkmark.shield")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
 
-            HStack {
-                if settings.hotKeyMode == .pressAndHold {
-                    Button("测试 key-down") {
-                        model.testHoldDown()
+                HStack {
+                    if settings.hotKeyMode == .pressAndHold {
+                        Button("测试 key-down") {
+                            model.testHoldDown()
+                        }
+                        Button("释放 key-up") {
+                            model.testHoldRelease()
+                        }
+                    } else {
+                        Button("测试快捷键") {
+                            model.testShortcutTap()
+                        }
                     }
-                    Button("释放 key-up") {
-                        model.testHoldRelease()
-                    }
-                } else {
-                    Button("测试快捷键") {
-                        model.testShortcutTap()
+                    Button("请求键盘权限") {
+                        model.requestKeyboardPermission()
                     }
                 }
-                Button("请求键盘权限") {
-                    model.requestKeyboardPermission()
+            } else {
+                HStack {
+                    Button("启用麦克风") { model.setSystemMicrophoneMuted(false) }
+                    Button("禁用麦克风") { model.setSystemMicrophoneMuted(true) }
                 }
+                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity)
         }
     }
 

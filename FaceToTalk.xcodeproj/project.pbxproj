@@ -17,6 +17,7 @@
 		A10000000000000000000008 /* MenuPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* MenuPanel.swift */; };
 		A10000000000000000000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* SettingsView.swift */; };
 		A1000000000000000000000A /* ShortcutRecorderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* ShortcutRecorderView.swift */; };
+		A10000000000000000000011 /* SystemMicrophoneController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* SystemMicrophoneController.swift */; };
 		A1000000000000000000000B /* FacingStateMachineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* FacingStateMachineTests.swift */; };
 		A1000000000000000000000C /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* XCTest.framework */; };
 /* End PBXBuildFile section */
@@ -48,6 +49,7 @@
 		B1000000000000000000000E /* FaceToTalkTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FaceToTalkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1000000000000000000000F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10000000000000000000010 /* FaceToTalk.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FaceToTalk.entitlements; sourceTree = "<group>"; };
+		B10000000000000000000011 /* SystemMicrophoneController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMicrophoneController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,6 +96,7 @@
 				B10000000000000000000008 /* MenuPanel.swift */,
 				B10000000000000000000009 /* SettingsView.swift */,
 				B1000000000000000000000A /* ShortcutRecorderView.swift */,
+				B10000000000000000000011 /* SystemMicrophoneController.swift */,
 				B1000000000000000000000F /* Info.plist */,
 				B10000000000000000000010 /* FaceToTalk.entitlements */,
 			);
@@ -232,6 +235,7 @@
 				A10000000000000000000008 /* MenuPanel.swift in Sources */,
 				A10000000000000000000009 /* SettingsView.swift in Sources */,
 				A1000000000000000000000A /* ShortcutRecorderView.swift in Sources */,
+				A10000000000000000000011 /* SystemMicrophoneController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -293,13 +297,13 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FaceToTalk/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.3;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.handev.FaceToTalk;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_STRICT_CONCURRENCY = complete;
@@ -315,13 +319,13 @@
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FaceToTalk/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.3;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.handev.FaceToTalk;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_STRICT_CONCURRENCY = complete;
